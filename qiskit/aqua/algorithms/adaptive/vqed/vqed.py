@@ -56,6 +56,84 @@ def _convert_to_int_arr(memory):
         return purity  - overlap
 
 
+def state_overlap(self, num_qubits):
+    """Returns a state overlap circuit as a cirq.Circuit."""
+    # declare a circuit
+    qr = QuantumRegister(2 * num_qubits)
+    cr = ClassicalRegister(2 * num_qubits)
+    circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
+
+    # gates to perform
+    def bell_basis_gates(i):
+        bell_qr = QuantumRegister(2)
+        bell_circ = QuantumCircuit(bell_qr,
+                                   name="bell-basis")
+        bell_circ.cx(bell_qr[0], bell_qr[1]),
+        bell_circ.h(bell_qr[0])
+
+        return bell_circ
+
+    # add the bell basis gates to the circuit
+    for i in range(num_qubits):
+        circ.append(bell_basis_gates(i).to_instruction(), [
+                    qr[i], qr[ii + num_qubits]])
+
+    # measurements
+    qubits_to_measure = qr[:num_qubits]
+    cbits_to_measure = cr[:num_qubits]
+
+    circ.barrier()
+    circ.measure(qubits_to_measure, cbits_to_measure)
+    return circ
+
+def state_overlap_postprocessing(self, output):
+        """Does the classical post-processing for the state overlap algorithm.
+
+        Args:
+            output [type: np.array]
+                The output of the state overlap algorithm.
+
+                The format of output should be as follows:
+                    vals.size = (number of circuit experiments
+                                 number of qubits being measured)
+
+                    the ith column of vals is all the measurements on the
+                    ith qubit. The length of this column is the number
+                    of times the circuit has been run.
+
+        Returns:
+            Estimate of the state overlap as a float
+        """
+        # =====================================================================
+        # constants and error checking
+        # =====================================================================
+
+        # number of qubits and number of experimental shot of the circuit
+        (nshots, nqubits) = output.shape
+        print(output)
+
+        # check that the number of qubits is even
+        assert nqubits % 2 == 0, "Input is not a valid shape."
+
+        # initialize variable to hold the state overlap estimate
+        overlap = 0.0
+
+        # =====================================================================
+        # postprocessing
+        # =====================================================================
+
+        # loop over all the bitstrings produced by running the circuit
+        shift = nqubits // 2
+        for z in output:
+            parity = 1
+            pairs = [z[i] and z[ii + shift] for ii in range(shift)]
+            # DEBUG
+            for pair in pairs:
+                parity *= (-1)**pair
+            overlap += parity
+
+        return overlap / nshots
+
 def swap_circuit(self, num_qubits):
     """
     Construct Destructive Swap Test over 2n qubits
@@ -67,7 +145,7 @@ def swap_circuit(self, num_qubits):
     """
     qr = QuantumRegister(2 * num_qubits)
     cr = ClassicalRegister(2 * num_qubits)
-    qc = QuantumCircuit(qr, cr)
+    qc = QuantumCircuit(qr, cr, name="swap_circuit")
 
     for i in range(num_qubits):
         qc.cx(qr[i], qr[i + num_qubits])
@@ -89,7 +167,7 @@ def dip_circuit(self, num_qubits):
     """
     qr = QuantumRegister(2 * num_qubits)
     cr = ClassicalRegister(2 * num_qubits)
-    qc = QuantumCircuit(qr, cr)
+    qc = QuantumCircuit(qr, cr, name="dip_circuit")
 
     for i in range(num_qubits):
         qc.cx(qr[i], qr[i + num_qubits])
@@ -113,7 +191,7 @@ def pdip_circuit(self, num_qubits, j):
     """
     qr = QuantumRegister(2 * num_qubits)
     cr = ClassicalRegister(2 * num_qubits)
-    qc = QuantumCircuit(qr, cr)
+    qc = QuantumCircuit(qr, cr, name="pdip_circuit")
 
     for i in range(num_qubits):
         qc.cx(qr[i], qr[i + num_qubits])
