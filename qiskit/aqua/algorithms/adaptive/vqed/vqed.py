@@ -55,7 +55,6 @@ def _convert_to_int_arr(memory):
         overlap = counts[0] / repetitions if 0 in counts.keys() else 0
         return purity  - overlap
 
-
 def state_overlap(self, num_qubits):
     """Returns a state overlap circuit as a cirq.Circuit."""
     # declare a circuit
@@ -154,7 +153,6 @@ def swap_circuit(self, num_qubits):
     qc.barrier(qr)
     qc.measure(qr, cr)
     return qc
-
 
 def dip_circuit(self, num_qubits):
     """
