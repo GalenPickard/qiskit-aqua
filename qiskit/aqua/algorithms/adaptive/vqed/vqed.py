@@ -28,6 +28,7 @@ from qiskit.aqua.algorithms.adaptive.vq_algorithm import VQAlgorithm
 
 from qiskit.aqua.components.optimizers import POWELL
 from qiskit.aqua.components.variational_forms import RY
+from qiskit.aqua.components.initial_states import custom
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class VQED(VQAlgorithm):
                          cost_fn=None,
                          initial_point=initial_point)
         self._use_simulator_snapshot_mode = None
+        self._num_qubits = num_qubits
         self._ret = None
         self._eval_time = None
         self._optimizer.set_max_evals_grouped(max_evals_grouped)
@@ -70,8 +72,13 @@ class VQED(VQAlgorithm):
         if initial_point is None:
             self._initial_point = var_form.preferred_init_points
         self._eval_count = 0
-        self._var_form_params = ParameterVector('θ', self._var_form.num_parameters)
+        self._var_form_params = ParameterVector(
+            'θ', self._var_form.num_parameters)
 
+        self.state_prep_circ = None
+        self.unitary_circ = None
+        self.dip_test_circ = None
+        self.purity = None
         self._parameterized_circuits = None
 
     def _run(self):
@@ -105,11 +112,44 @@ class VQED(VQAlgorithm):
     def get_optimal_vector(self):
         pass
 
-    def _convert_to_int_arr(memory):
-        a = map(lambda x: list(x), memory)
-        return np.array(list(a), dtype='int')
+    def compute_purity(self,
+                       simulator=Aer.get_backend('qasm_simulator'),
+                       nshots=10000):
+        """Computes and returns the (approximate) purity of the state."""
+        # get the circuit without the diagonalizing unitary
+        num_qubits = self._num_qubits
+        qr = QuantumRegister(2 * num_qubits)
+        cr = ClassicalRegister(2 * num_qubits)
+
+        circuit = QuantumCircuit(qr, cr)
+
+        circuit.append(self.state_prep_circ.to_instruction(),
+                       np.arange(2 * num_qubits))
+
+        circuit.append(self.state_overlap().to_instruction(),
+                       np.arange(2 * num_qubits))
+
+        # DEBUG
+        print("I'm computing the purity as per the circuit:")
+        print(circuit)
+        results = simulator.execute(circuit, nshots=nshots, memory=True)
+        memory = results.get_memory('dip_circuit')
+        counts = _convert_to_int_arr(memory)
+        self.purity = self.state_overlap_postprocessing(counts)
+
+        def init_state_circ(self, state_vector=None, circuit=None):
+        assert state_vector is not None or circuit is not None, "Must specify
+        either state_vector or circuit"
+
+        if state_vector is not None:
+            state_prep = custom.Custom(
+                self.num_qubits, state_vector=state_vector)
+        elif circuit is not None:
+            state_prep = custom.Custom(self.num_qubits, circuit=circuit)
+        return self.state_prep_circ = state_prep.construct_circuit()
 
     def c1(self,
+           params,
            simulator=Aer.get_backend('qasm_simulator'),
            nshots=1000):
         """Computes c_1 term of the cost function"""
@@ -119,6 +159,7 @@ class VQED(VQAlgorithm):
 
         # run the circuit
         result = self.run(simulator, nshots)
+        se
         memory = result.get_memory('dip_circuit')
         counts = _convert_to_int_arr(memory)
 
@@ -126,9 +167,10 @@ class VQED(VQAlgorithm):
         overlap = counts[0] / repetitions if 0 in counts.keys() else 0
         return purity - overlap
 
-    def state_overlap(self, num_qubits):
+        def state_overlap(self):
         """Returns a state overlap circuit as a cirq.Circuit."""
         # declare a circuit
+        num_qubits = self._num_qubits
         qr = QuantumRegister(2 * num_qubits)
         cr = ClassicalRegister(2 * num_qubits)
         circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
@@ -198,7 +240,6 @@ class VQED(VQAlgorithm):
                 parity *= (-1) ** pair
             overlap += parity
 
-
     def swap_circuit(self, num_qubits):
         """
         Construct Destructive Swap Test over 2n qubits
@@ -267,5 +308,11 @@ class VQED(VQAlgorithm):
     @property
     def optimal_params(self):
         if 'opt_params' not in self._ret:
-            raise AquaError("Cannot find optimal params before running the algorithm.")
+            raise AquaError(
+                "Cannot find optimal params before running the algorithm.")
         return self._ret['opt_params']
+
+    @staticmethod
+    def _convert_to_int_arr(memory):
+        a = map(lambda x: list(x), memory)
+        return np.array(list(a), dtype='int')
