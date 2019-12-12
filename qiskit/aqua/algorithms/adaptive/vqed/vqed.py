@@ -21,6 +21,7 @@ import numpy as np
 from sklearn.utils import shuffle
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.circuit import ParameterVector
+from qiskit import Aer
 
 from qiskit.aqua import Pluggable, PluggableType, get_pluggable_class, AquaError
 from qiskit.aqua.utils import get_feature_dimension
@@ -31,6 +32,28 @@ from qiskit.aqua.algorithms.adaptive.vq_algorithm import VQAlgorithm
 logger = logging.getLogger(__name__)
 
 # pylint: disable=invalid-name
+
+
+def _convert_to_int_arr(memory):
+    a = map(lambda x: list(x), memory)
+    return np.array(list(a), dtype='int')
+
+ def c1(self,
+                simulator=Aer.get_backend('qasm_simulator'),
+                nshots=1000):
+        """Computes c_1 term of the cost function"""
+
+        if not self.purity:
+            self.compute_purity()
+
+        # run the circuit
+        result = self.run(simulator, nshots)
+        memory = result.get_memory('dip_circuit')
+        counts = _convert_to_int_arr(memory)
+        
+        # compute the overlap and return the objective function
+        overlap = counts[0] / repetitions if 0 in counts.keys() else 0
+        return purity  - overlap
 
 
 def swap_circuit(self, num_qubits):
