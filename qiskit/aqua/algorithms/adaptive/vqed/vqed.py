@@ -38,7 +38,7 @@ def swap_circuit(self, num_qubits):
     Construct Destructive Swap Test over 2n qubits
 
     Args:
-        TKTKTK
+        num_qubits (int): number of qubits in each of the states to be compared
     Returns:
         QuantumCircuit: the circuit
     """
@@ -56,6 +56,14 @@ def swap_circuit(self, num_qubits):
 
 
 def dip_circuit(self, num_qubits):
+    """
+    Construct DIP Test over 2n qubits
+
+    Args:
+        num_qubits (int): number of qubits in each of the states to be compared
+    Returns:
+        QuantumCircuit: the circuit
+    """
     qr = QuantumRegister(2 * num_qubits)
     cr = ClassicalRegister(2 * num_qubits)
     qc = QuantumCircuit(qr, cr)
@@ -71,6 +79,15 @@ def dip_circuit(self, num_qubits):
 
 
 def pdip_circuit(self, num_qubits, j):
+    """
+    Construct PDIP Test over 2n qubits
+
+    Args:
+        num_qubits (int): number of qubits in each of the states to be compared
+        j (iterable[int]): qubit indices for which DIP test should be used
+    Returns:
+        QuantumCircuit: the circuit
+    """
     qr = QuantumRegister(2 * num_qubits)
     cr = ClassicalRegister(2 * num_qubits)
     qc = QuantumCircuit(qr, cr)
