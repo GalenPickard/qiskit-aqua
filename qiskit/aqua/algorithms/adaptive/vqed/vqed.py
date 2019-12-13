@@ -316,10 +316,22 @@ class VQED(VQAlgorithm):
         print(circuit)
         results = simulator.execute(circuit, nshots=nshots, memory=True)
         memory = results.get_memory('dip_circuit')
-        counts = _convert_to_int_arr(memory)
+        counts = self._convert_to_int_arr(memory)
         self.purity = self.state_overlap_postprocessing(counts)
 
-     def state_overlap_postprocessing(self, output):
+    def init_state_circ(self, state_vector=None, circuit=None):
+        assert state_vector is not None or circuit is not None, "Must specify either state_vector or circuit"
+
+        if state_vector is not None:
+            state_prep = custom.Custom(
+                self.num_qubits, state_vector=state_vector)
+        else:
+            state_prep = custom.Custom(self.num_qubits, circuit=circuit)
+        self.state_prep_circ = state_prep.construct_circuit()
+        return self.state_prep_circ
+
+     @staticmethod
+    def state_overlap_postprocessing(output):
         """Does the classical post-processing for the state overlap algorithm.
         Args:
             output [type: np.array]
@@ -360,6 +372,14 @@ class VQED(VQAlgorithm):
             for pair in pairs:
                 parity *= (-1) ** pair
             overlap += parity
+        return overlap
+
+    @staticmethod
+    def state_overlap_circuit(num_qubits):
+        # declare a circuit
+        qr = QuantumRegister(2 * num_qubits)
+        cr = ClassicalRegister(2 * num_qubits)
+        circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
 
     def c1_resolved(self,
            params,
