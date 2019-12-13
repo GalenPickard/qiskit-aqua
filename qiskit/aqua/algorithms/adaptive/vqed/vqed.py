@@ -61,7 +61,7 @@ class VQED(VQAlgorithm):
         optimizer = optimizer or POWELL()
         super().__init__(var_form=var_form,
                          optimizer=optimizer,
-                         cost_fn=None,
+                         cost_fn=self.c1,
                          initial_point=initial_point)
         self._use_simulator_snapshot_mode = None
         self._num_qubits = num_qubits
@@ -136,16 +136,31 @@ class VQED(VQAlgorithm):
     def c1(self,
            params,
            simulator=Aer.get_backend('qasm_simulator'),
-           nshots=1000):
+           nshots=1000,
+           init_state_vector=None, init_circuit=None):
         """Computes c_1 term of the cost function"""
 
         if not self.purity:
             self._compute_purity()
 
+        if not self.state_prep_circ:
+            self._init_state_circ(init_state_vector, init_circuit)
+
+        qr = QuantumRegister(2 * self.num_qubits)
+        cr = ClassicalRegister(2 * self.num_qubits)
+        qc = QuantumCircuit(qr, cr, name="c1_circuit")
+
+        qc.append(self.state_prep_circ.to_instruction(), qr[:self.num_qubits])
+        qc.append(self.state_prep_circ.to_instruction(), qr[self.num_qubits:])
+
+        qc.append(self._var_form.construct_circuit(params), qr[:self.num_qubits])
+        qc.append(self._var_form.construct_circuit(params), qr[self.num_qubits:])
+
+        qc.append(self.dip_circuit(self.num_qubits).to_instruction(), qr)
+
         # run the circuit
-        result = self.run(simulator, nshots)
-        memory = result.get_memory('dip_circuit')
-        counts = self._convert_to_int_arr(memory)
+        results = simulator.execute(qc, nshots=nshots, memory=True)
+        counts = self._convert_to_int_arr(results)
 
         # compute the overlap and return the objective function
         overlap = counts[0] / nshots if 0 in counts else 0
