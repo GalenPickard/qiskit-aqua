@@ -21,7 +21,7 @@ import numpy as np
 from sklearn.utils import shuffle
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.circuit import ParameterVector
-from qiskit import Aer
+from qiskit import Aer, execute
 
 from qiskit.aqua import Pluggable, PluggableType, get_pluggable_class, AquaError
 from qiskit.aqua.algorithms.adaptive.vq_algorithm import VQAlgorithm
@@ -46,7 +46,7 @@ class VQED(VQAlgorithm):
     """
 
     def __init__(self, optimizer, var_form, num_qubits,
-                 initial_point=None, max_evals_grouped=1, callback=None):
+                 initial_point=None, max_evals_grouped=1, callback=None, depth=3):
         """Constructor.
         Args:
             var_form (VariationalForm): parametrized variational form.
@@ -59,7 +59,8 @@ class VQED(VQAlgorithm):
                                  the index of evaluation, parameters of variational form,
                                  evaluated mean, evaluated standard deviation.
         """
-        var_form = var_form or RY(num_qubits)
+        var_form = var_form or RY(
+            num_qubits, depth=depth)
         optimizer = optimizer or POWELL()
         super().__init__(var_form=var_form,
                          optimizer=optimizer,
@@ -67,18 +68,19 @@ class VQED(VQAlgorithm):
                          initial_point=initial_point)
         self._use_simulator_snapshot_mode = None
         self._num_qubits = num_qubits
-        self._total_qubits = 2 * num_qubits  # pure states
-        self._qubits = QuantumRegister(self._total_qubits)
-        self._cbits = QuantumClassical(self._total_qubits)
+        self._total_num_qubits = 2 * num_qubits  # pure states
+        self._qubits = QuantumRegister(self._total_num_qubits)
+        self._cbits = ClassicalRegister(self._total_num_qubits)
         self._ret = None
         self._eval_time = None
-        self._optimizer.set_max_evals_grouped(max_evals_grouped)
+        # self._optimizer.set_max_evals_grouped(max_evals_grouped)
         self._callback = callback
         if initial_point is None:
             self._initial_point = var_form.preferred_init_points
         self._eval_count = 0
+
         self._var_form_params = ParameterVector(
-            'θ', self._var_form.num_parameters)
+            'θ', self._var_form._num_parameters)
 
         self._state_prep_circ = None
         self._unitary_circ = None
@@ -96,15 +98,15 @@ class VQED(VQAlgorithm):
 
     def clear_state_prep_circ(self):
         """Sets the state prep circuit to be a new, empty circuit."""
-        self.state_prep_circ = QuantumCircuit(self._total_qubits)
+        self.state_prep_circ = QuantumCircuit(self._total_num_qubits)
 
     def clear_unitary_circ(self):
         """Sets the unitary circuit to be a new, empty circuit."""
-        self.unitary_circ = QuantumCircuit(self._total_qubits)
+        self.unitary_circ = QuantumCircuit(self._total_num_qubits)
 
     def clear_dip_test_circ(self):
         """Sets the dip test circuit to be a new, empty circuit."""
-        self.dip_test_circ = QuantumCircuit(self._total_qubits)
+        self.dip_test_circ = QuantumCircuit(self._total_num_qubits)
 
     def state_prep(self, params, depth=1, copy=0):
         """Adds the parametrized state prep circuit to self.state_prep_circ.
@@ -139,7 +141,7 @@ class VQED(VQAlgorithm):
         # unitary ansatz
         # =====================================================================
 
-    def unitary_ansatz(self, params, depth=1, copy=0):
+    def unitary_ansatz(self, params, depth=1):
         """Adds the parametrized unitary circuit to self.unitary_circ
 
           input:
@@ -155,12 +157,9 @@ class VQED(VQAlgorithm):
               self._unitary_circ
           """
 
-        assert len(params) == self._var_form.num_parameters
+        assert len(params) == self._var_form._num_parameters
 
-        unitary_var_form = RY(
-            num_qubits, depth=depth, entanglement='linear')
-
-        self._unitary_circ = unitary_var_form.construct_circuit(params)
+        self._unitary_circ = self._var_form.construct_circuit(params)
 
     def dip_circuit(self):
         """
@@ -173,7 +172,7 @@ class VQED(VQAlgorithm):
         """
 
         num_qubits = self._num_qubits
-        total_num_qubits = self._total_qubits
+        total_num_qubits = self._total_num_qubits
         qr = QuantumRegister(total_num_qubits)
         cr = ClassicalRegister(total_num_qubits)
         qc = QuantumCircuit(qr, cr, name="dip_circuit")
@@ -195,7 +194,7 @@ class VQED(VQAlgorithm):
         Returns:
             QuantumCircuit: the circuit
         """
-        total_num_qubits = self._total_qubits
+        total_num_qubits = self._total_num_qubits
         num_qubits = self._num_qubits
         qr = QuantumRegister(total_num_qubits)
         cr = ClassicalRegister(total_num_qubits)
@@ -223,7 +222,7 @@ class VQED(VQAlgorithm):
         cr = ClassicalRegister(total_num_qubits)
         qc = QuantumCircuit(qr, cr)
 
-                for i in range(num_qubits):
+        for i in range(num_qubits):
             qc.cx(qr[i + num_qubits], qr[i])
         qc.barrier(qr)
 
@@ -297,22 +296,24 @@ class VQED(VQAlgorithm):
         """Computes and returns the (approximate) purity of the state."""
         # get the circuit without the diagonalizing unitary
         num_qubits = self._num_qubits
-        total_num_qubits = self._total_qubits
+        total_num_qubits = self._total_num_qubits
         qr = QuantumRegister(total_num_qubits)
         cr = ClassicalRegister(total_num_qubits)
 
         circuit = QuantumCircuit(qr, cr)
 
-        circuit.append(self.state_prep_circ.to_instruction(),
+        print(self._state_prep_circ)
+
+        circuit.append(self._state_prep_circ.to_instruction(),
                 qr[:num_qubits])
 
         circuit.append(self.state_overlap_circuit(num_qubits).to_instruction(),
-                       np.arange(2 * num_qubits))
+                       qr[:])
 
         # DEBUG
         print("I'm computing the purity as per the circuit:")
         print(circuit)
-        results = simulator.execute(circuit, nshots=nshots, memory=True)
+        results = execute(circuit, simulator, nshots=nshots, memory=True)
         memory = results.get_memory('dip_circuit')
         counts = self._convert_to_int_arr(memory)
         self.purity = self.state_overlap_postprocessing(counts)
@@ -321,12 +322,12 @@ class VQED(VQAlgorithm):
         assert state_vector is not None or circuit is not None, "Must specify either state_vector or circuit"
 
         if state_vector is not None:
-            state_prep = custom.Custom(
-                self.num_qubits, state_vector=state_vector)
+            state_prep = Custom(
+                self._num_qubits, state_vector=state_vector)
         else:
-            state_prep = custom.Custom(self.num_qubits, circuit=circuit)
-        self.state_prep_circ = state_prep.construct_circuit()
-        return self.state_prep_circ
+            state_prep = Custom(self._num_qubits, circuit=circuit)
+
+        self._state_prep_circ = state_prep.construct_circuit()
 
     @staticmethod
     def state_overlap_postprocessing(output):
@@ -416,9 +417,9 @@ class VQED(VQAlgorithm):
         circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
 
     def c1_resolved(self,
-           params,
-           simulator=Aer.get_backend('qasm_simulator'),
-           nshots=1000):
+                    params,
+                    simulator=Aer.get_backend('qasm_simulator'),
+                    nshots=1000):
         """Computes c_1 term of the cost function"""
 
         if not self.purity:
@@ -432,7 +433,6 @@ class VQED(VQAlgorithm):
         # compute the overlap and return the objective function
         overlap = counts[0] / repetitions if 0 in counts.keys() else 0
         return purity - overlap
-
 
     def c2_resolved(self, params, simulator=Aer.get_backend('qasm_simulator'), nshots=1000):
         """Returns the objective function as computed by the PDIP Test."""
@@ -488,7 +488,6 @@ class VQED(VQAlgorithm):
 
         return self_purity - ov / self._num_qubits
 
-
     def state_overlap(self):
         """Returns a the state overlap circuit as a cirq.Circuit."""
         # declare a circuit
@@ -496,10 +495,10 @@ class VQED(VQAlgorithm):
         total_num_qubits = self._total_num_qubits
         circuit = QuantumCircuit(total_num_qubits)
 
-
         # gates to perform
+
         def bell_basis_gates():
-            qc = QuantumCircuit(2) 
+            qc = QuantumCircuit(2)
             qc.cx(0, 1)
             qc.h(0)
 
@@ -514,20 +513,26 @@ class VQED(VQAlgorithm):
         # measurements
         circuit.measure_all()
 
-
         return circuit
-
 
     def algorithm(self):
         num_qubits = self._num_qubits
         total_num_qubits = self._total_num_qubits
+
         qr = QuantumRegister(total_num_qubits)
         cr = ClassicalRegister(total_num_qubits)
-        qc = QuantumRegister(qr, cr, name="vqsd")
 
-        qc.append(self._state_prep_circ.to_instruction(), qr)
-        qc.append(self._unitary_circ.to_instruction(), qr)
-        qc.append(self._dip_test_circ.to_instruction(), qr)
+        qc = QuantumCircuit(qr, cr, name="vqed")
+
+        qc.append(self._state_prep_circ.to_instruction(), qr[:num_qubits])
+        qc.append(self._state_prep_circ.to_instruction(),
+                  qr[num_qubits:])
+
+        qc.append(self._unitary_circ.to_instruction(), qr[:num_qubits])
+        qc.append(self._unitary_circ.to_instruction(),
+                  qr[num_qubits:])
+
+        qc.append(self._dip_test_circ.to_instruction(), qr[:])
 
         return qc
 
@@ -536,12 +541,11 @@ class VQED(VQAlgorithm):
 
         if params is None:
             params = 2 * np.random.rand(12 *
-                    self._var_form_params.num_parameters)
+                                        self._var_form_params._num_parameters)
         binded_params = {self._var_form_params: params}
         qc.bind_paramaeters(binded_params)
 
         return qc
-
 
     def qcost(params):
         # PDIP cost
@@ -549,7 +553,7 @@ class VQED(VQAlgorithm):
         pdip = self.c2_resolved(params, nshots=nshots)
 
         # DIP cost
-        self..clear_dip_test_circ()
+        self.clear_dip_test_circ()
         self.dip_test()
         dip = self.c1_resolved(params, shots=nshots)
 
@@ -562,8 +566,7 @@ class VQED(VQAlgorithm):
         assert(params == self.var_form.num_paramaters)
         curr_param = {self._var_form_params: params}
         qc = self.algorithm_resolved(params)
-        return simulator.execute(qc, nshots=nshots, memory=True)
-
+        return execute(qc, nshots=nshots, memory=True)
 
     @property
     def optimal_params(self):
@@ -576,3 +579,28 @@ class VQED(VQAlgorithm):
     def _convert_to_int_arr(memory):
         a = map(lambda x: list(x), memory)
         return np.array(list(a), dtype='int')
+
+    if __name__ == '__main__':
+        n = 1
+        depth = 3
+        optimizer = POWELL
+        var_form = RY(n, depth=depth)
+
+        import vqed
+
+        vqed_inst = vqed.VQED(optimizer, var_form, n)
+
+        vqed_inst.init_state_circ(
+            state_vector=[1/math.sqrt(2), 1/math.sqrt(2)])
+
+        print(vqed_inst._state_prep_circ)
+
+        params = [0.5] * var_form._num_parameters
+
+        vqed_inst.unitary_ansatz(params)
+
+        vqed_inst.dip_test()
+
+        print("Structure of Circuit:\n", vqed_inst.algorithm())
+
+        vqed_inst.compute_purity()
