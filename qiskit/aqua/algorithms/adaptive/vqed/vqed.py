@@ -260,8 +260,6 @@ class VQED(VQAlgorithm):
         pdip_qc = self.pdip_circuit()
         self._dip_test_circ = pdip_qc
 
-
-
     def _run(self):
         self._eval_count = 0
         self._ret = self.find_minimum(initial_point=self.initial_point,
@@ -308,8 +306,8 @@ class VQED(VQAlgorithm):
         circuit.append(self.state_prep_circ.to_instruction(),
                 qr[:num_qubits])
 
-        circuit.append(self.state_overlap().to_instruction(),
-                qr[num_qubits: total_num_qubits])
+        circuit.append(self.state_overlap_circuit(num_qubits).to_instruction(),
+                       np.arange(2 * num_qubits))
 
         # DEBUG
         print("I'm computing the purity as per the circuit:")
@@ -330,7 +328,7 @@ class VQED(VQAlgorithm):
         self.state_prep_circ = state_prep.construct_circuit()
         return self.state_prep_circ
 
-     @staticmethod
+    @staticmethod
     def state_overlap_postprocessing(output):
         """Does the classical post-processing for the state overlap algorithm.
         Args:
@@ -351,7 +349,6 @@ class VQED(VQAlgorithm):
 
         # number of qubits and number of experimental shot of the circuit
         (nshots, nqubits) = output.shape
-        print(output)
 
         # check that the number of qubits is even
         assert nqubits % 2 == 0, "Input is not a valid shape."
@@ -377,6 +374,43 @@ class VQED(VQAlgorithm):
     @staticmethod
     def state_overlap_circuit(num_qubits):
         # declare a circuit
+        qr = QuantumRegister(2 * num_qubits)
+        cr = ClassicalRegister(2 * num_qubits)
+        circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
+
+        # gates to perform
+        def bell_basis_gates():
+            bell_qr = QuantumRegister(2)
+            bell_circ = QuantumCircuit(bell_qr,
+                                       name="bell-basis")
+            bell_circ.cx(bell_qr[0], bell_qr[1]),
+            bell_circ.h(bell_qr[0])
+
+            return bell_circ
+
+        # add the bell basis gates to the circuit
+        for i in range(num_qubits):
+            circ.append(bell_basis_gates().to_instruction(), [
+                qr[i], qr[i + num_qubits]])
+
+        # measurements
+        qubits_to_measure = qr[:num_qubits]
+        cbits_to_measure = cr[:num_qubits]
+
+        circ.barrier()
+        circ.measure(qubits_to_measure, cbits_to_measure)
+        return circ
+
+    @staticmethod
+    def swap_circuit(num_qubits):
+        """
+        Construct Destructive Swap Test over 2n qubits
+
+        Args:
+            num_qubits (int): number of qubits in each of the states to be compared
+        Returns:
+            QuantumCircuit: the circuit
+        """
         qr = QuantumRegister(2 * num_qubits)
         cr = ClassicalRegister(2 * num_qubits)
         circ = QuantumCircuit(qr, cr, name="state_overlap_circuit")
@@ -497,7 +531,6 @@ class VQED(VQAlgorithm):
 
         return qc
 
-
     def algorithm_resolved(self, params):
         qc = self.algorithm()
 
@@ -508,15 +541,6 @@ class VQED(VQAlgorithm):
         qc.bind_paramaeters(binded_params)
 
         return qc
-
-    def run(self,
-            simulator=Aer.get_backend('qasm_simulator'),
-            nshots=1000):
-        """Runs the algorithm and returns the result.
-
-        rtype: cirq.TrialResult
-        """
-        return simulator.execute(self.algorithm(), repetitions=repetitions)
 
 
     def qcost(params):
