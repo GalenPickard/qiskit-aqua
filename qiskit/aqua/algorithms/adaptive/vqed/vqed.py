@@ -47,8 +47,8 @@ class VQED(VQAlgorithm):
                  initial_point=None, max_evals_grouped=1, callback=None):
         """Constructor.
         Args:
-            var_form (VariationalForm): parametrized variational form.
             optimizer (Optimizer): the classical optimization algorithm.
+            var_form (VariationalForm): parametrized variational form.
             initial_point (numpy.ndarray): optimizer initial point.
             max_evals_grouped (int): max number of evaluations performed simultaneously
             callback (Callable): a callback that can access the intermediate data
@@ -97,25 +97,10 @@ class VQED(VQAlgorithm):
         self.cleanup_parameterized_circuits()
         return self._ret
 
-    def get_optimal_cost(self):
-        if 'opt_params' not in self._ret:
-            raise AquaError("Cannot return optimal cost before running the "
-                            "algorithm to find optimal params.")
-        return self._ret['min_val']
-
-    def get_optimal_circuit(self):
-        if 'opt_params' not in self._ret:
-            raise AquaError("Cannot find optimal circuit before running the "
-                            "algorithm to find optimal params.")
-        return self._var_form.construct_circuit(self._ret['opt_params'])
-
-    def get_optimal_vector(self):
-        pass
-
-    def compute_purity(self,
-                       simulator=Aer.get_backend('qasm_simulator'),
-                       nshots=10000):
-        """Computes and returns the (approximate) purity of the state."""
+    def _compute_purity(self,
+                        simulator=Aer.get_backend('qasm_simulator'),
+                        nshots=10000):
+        """Computes the (approximate) purity of the state."""
         # get the circuit without the diagonalizing unitary
         num_qubits = self._num_qubits
         qr = QuantumRegister(2 * num_qubits)
@@ -126,7 +111,7 @@ class VQED(VQAlgorithm):
         circuit.append(self.state_prep_circ.to_instruction(),
                        np.arange(2 * num_qubits))
 
-        circuit.append(self.state_overlap_circuit(num_qubits).to_instruction(),
+        circuit.append(self._state_overlap_circuit(num_qubits).to_instruction(),
                        np.arange(2 * num_qubits))
 
         # DEBUG
@@ -137,7 +122,7 @@ class VQED(VQAlgorithm):
         counts = self._convert_to_int_arr(memory)
         self.purity = self.state_overlap_postprocessing(counts)
 
-    def init_state_circ(self, state_vector=None, circuit=None):
+    def _init_state_circ(self, state_vector=None, circuit=None):
         assert state_vector is not None or circuit is not None, "Must specify either state_vector or circuit"
 
         if state_vector is not None:
@@ -155,7 +140,7 @@ class VQED(VQAlgorithm):
         """Computes c_1 term of the cost function"""
 
         if not self.purity:
-            self.compute_purity()
+            self._compute_purity()
 
         # run the circuit
         result = self.run(simulator, nshots)
@@ -211,7 +196,15 @@ class VQED(VQAlgorithm):
         return overlap
 
     @staticmethod
-    def state_overlap_circuit(num_qubits):
+    def _state_overlap_circuit(num_qubits):
+        """
+        Construct state overlap circuit over 2n qubits
+
+        Args:
+            num_qubits (int): number of qubits in each of the states to be compared
+        Returns:
+            QuantumCircuit: the circuit
+        """
         # declare a circuit
         qr = QuantumRegister(2 * num_qubits)
         cr = ClassicalRegister(2 * num_qubits)
@@ -314,6 +307,23 @@ class VQED(VQAlgorithm):
             raise AquaError(
                 "Cannot find optimal params before running the algorithm.")
         return self._ret['opt_params']
+
+    def get_optimal_cost(self):
+        if 'opt_params' not in self._ret:
+            raise AquaError("Cannot return optimal cost before running the "
+                            "algorithm to find optimal params.")
+        return self._ret['min_val']
+
+    def get_optimal_circuit(self):
+        if 'opt_params' not in self._ret:
+            raise AquaError("Cannot find optimal circuit before running the "
+                            "algorithm to find optimal params.")
+        return self._var_form.construct_circuit(self._ret['opt_params'])
+
+    # TODO: Implement optimal vector extraction when using a supported backend
+    def get_optimal_vector(self):
+        """Not yet implemented. Required due to VQAlgorithm abstract class."""
+        pass
 
     @staticmethod
     def _convert_to_int_arr(memory):
